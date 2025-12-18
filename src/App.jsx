@@ -371,35 +371,22 @@ const App = () => {
 
     if (!stats) return;
 
-    // Map risk ratings to numeric values for continuous yellow-to-red scale
-    const riskRatingValues = {
-      'Very Low': 0,
-      'Relatively Low': 0.25,
-      'Relatively Moderate': 0.5,
-      'Relatively High': 0.75,
-      'Very High': 1
-    };
-
-    // Build color expression based on risk rating strings using continuous yellow-to-red scale
+    // Build color expression based on risk rating categories (categorical mapping)
     const buildRiskRatingColorExpression = () => {
-      // First, map rating string to numeric value, then interpolate color
-      const ratingCases = [];
-      Object.entries(riskRatingValues).forEach(([rating, value]) => {
-        ratingCases.push(['==', ['get', '__riskRating'], rating], value);
-      });
-      // Default to 0.5 (middle) for unknown ratings
-      ratingCases.push(0.5);
-      
-      // Map numeric value to color using continuous yellow-to-red interpolation
+      // Map each category directly to a color (light yellow to orange red)
       return [
-        'interpolate',
-        ['linear'],
-        ['case', ...ratingCases],
-        0, '#FFEB3B',      // Yellow (Very Low)
-        0.25, '#FFC107',   // Light Orange-Yellow (Relatively Low)
-        0.5, '#FF9800',    // Orange (Relatively Moderate)
-        0.75, '#F44336',   // Red (Relatively High)
-        1, '#B71C1C'       // Dark Red (Very High)
+        'case',
+        ['==', ['get', '__riskRating'], 'Very Low'],
+        '#FFF9C4',           // Light Yellow (Very Low)
+        ['==', ['get', '__riskRating'], 'Relatively Low'],
+        '#FFE082',           // Light Yellow-Orange (Relatively Low)
+        ['==', ['get', '__riskRating'], 'Relatively Moderate'],
+        '#FFB74D',           // Orange (Relatively Moderate)
+        ['==', ['get', '__riskRating'], 'Relatively High'],
+        '#FF8A65',           // Orange-Red (Relatively High)
+        ['==', ['get', '__riskRating'], 'Very High'],
+        '#E64A19',           // Dark Orange-Red (Very High)
+        '#9e9e9e'            // Gray for unknown/missing ratings
       ];
     };
 
@@ -1513,7 +1500,7 @@ const App = () => {
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
           >
-            SCALE-R Dashboard
+           SCALE-R Resilience Dashboard
           </h1>
           <p style={{ 
             fontSize: '0.9em', 
@@ -1521,7 +1508,7 @@ const App = () => {
             opacity: 0.8,
             fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
             fontWeight: 300
-          }}>Miami-Dade Climate Resilience Projects</p>
+          }}>Comprehensive mapping of adaptation strategies, projects, and investments in Miami-Dade</p>
           
           {/* Rich Info Card Tooltip */}
           <div style={{
@@ -2110,7 +2097,7 @@ const App = () => {
                       <div style={{
                         width: '100%',
                         height: '100%',
-                        background: 'linear-gradient(to right, #FFEB3B 0%, #FFEB3B 10%, #FFC107 28%, #FF9800 50%, #F44336 72%, #B71C1C 90%, #B71C1C 100%)'
+                        background: 'linear-gradient(to right, #FFF9C4 0%, #FFF9C4 20%, #FFE082 25%, #FFE082 40%, #FFB74D 45%, #FFB74D 60%, #FF8A65 65%, #FF8A65 80%, #E64A19 85%, #E64A19 100%)'
                     }}></div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#546e7a' }}>
