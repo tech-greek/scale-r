@@ -210,6 +210,12 @@ const App = () => {
   const handleCensusViewChange = (view) => {
     censusViewRef.current = view;
     setActiveCensusView(view);
+    // If "none" is selected, hide the census layer; otherwise show it
+    if (view === 'none') {
+      setCensusVisible(false);
+    } else {
+      setCensusVisible(true);
+    }
   };
 
   const handleCensusVisibilityToggle = () => {
@@ -346,14 +352,14 @@ const App = () => {
       if (!bounds.isEmpty()) {
         const shiftedBounds = shiftBoundsNortheast(bounds);
         map.current.fitBounds(shiftedBounds, { 
-          padding: { top: 100, bottom: 100, left: 100, right: 100 },
+          padding: { top: 10, bottom: 300, left: 200, right: 10 },
           maxZoom: 13,
           duration: 1500 
         });
       }
     } else {
     map.current.flyTo({
-      center: [-80.6327, 25.5516],
+      center: [-80.70, 26.15],
       zoom: 11,
       duration: 1500
     });
@@ -752,9 +758,9 @@ const App = () => {
     const lngRange = ne.lng - sw.lng;
     const latRange = ne.lat - sw.lat;
     
-    // Shift southwest corner northeast: 55% east, 35% north
+    // Shift southwest corner northeast: 55% east, 50% north
     const shiftLng = lngRange * 0.55;
-    const shiftLat = latRange * 0.35;
+    const shiftLat = latRange * 0.50;
     
     // Create new bounds with shifted southwest corner
     const shiftedBounds = new mapboxgl.LngLatBounds();
@@ -818,7 +824,7 @@ const App = () => {
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
-      center: [-80.6327, 25.5516],
+      center: [-80.70, 26.15],
       zoom: 11
     });
 
@@ -1015,7 +1021,7 @@ const App = () => {
             // Use shifted bounds for default position (shifted northeast)
             const shiftedBounds = shiftBoundsNortheast(bounds);
             map.current.fitBounds(shiftedBounds, { 
-              padding: { top: 100, bottom: 100, left: 100, right: 100 },
+              padding: { top: 10, bottom: 300, left: 200, right: 10 },
               maxZoom: 13,
               duration: 0 // No animation on initial load
             });
@@ -1167,7 +1173,7 @@ const App = () => {
         });
 
         if (hasBounds) {
-          map.current.fitBounds(bounds, { padding: 50, duration: 1200 });
+          map.current.fitBounds(bounds, { padding: { top: 10, bottom: 300, left: 350, right: 10 }, duration: 1200 });
         }
 
         console.groupCollapsed('[Census] Census Tract Data Summary');
@@ -1309,13 +1315,13 @@ const App = () => {
         const shiftedBounds = shiftBoundsNortheast(bounds);
         
         map.current.fitBounds(shiftedBounds, { 
-          padding: { top: 100, bottom: 100, left: 100, right: 100 },
+          padding: { top: 10, bottom: 300, left: 200, right: 10 },
           maxZoom: 13,
           duration: 1500 
         });
       } else {
         map.current.fitBounds(bounds, { 
-          padding: { top: 150, bottom: 150, left: 150, right: 150 },
+          padding: { top: 10, bottom: 300, left: 200, right: 10 },
           maxZoom: 12,
           duration: 1500 
         });
@@ -1508,7 +1514,7 @@ const App = () => {
             opacity: 0.8,
             fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
             fontWeight: 300
-          }}>Comprehensive mapping of adaptation strategies, projects, and investments in Miami-Dade</p>
+          }}>Comprehensive mapping of adaptation strategies, projects, and investments in Miami-Dade County</p>
           
           {/* Rich Info Card Tooltip */}
           <div style={{
@@ -1956,7 +1962,21 @@ const App = () => {
                 margin: 0,
                 textAlign: 'justify'
               }}>
-                This project is based upon work supported by the National Science Foundation under Grant Number (2435008).
+                This project is based upon work supported by the National Science Foundation under Grant Number (
+                <a 
+                  href="https://www.nsf.gov/awardsearch/show-award/?AWD_ID=2435008&HistoricalAwards=false"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: '#3498db',
+                    textDecoration: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                  onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                >
+                  2435008
+                </a>
+                ).
               </p>
               <div style={{ marginTop: '8px' }}>
                 <a
@@ -1980,6 +2000,25 @@ const App = () => {
                   <span style={{ fontSize: '0.75em', color: '#546e7a' }}>: Any opinions, findings, and conclusions or recommendations expressed in this website are those of the investigator(s) and do not necessarily reflect the views of the National Science Foundation.</span>
                 )}
               </div>
+              <p style={{
+                fontSize: '0.75em',
+                color: '#546e7a',
+                lineHeight: 1.6,
+                margin: '12px 0 0 0',
+                textAlign: 'left'
+              }}>
+                For more information and suggestions, contact Dr. Sarbeswar Praharaj at <a 
+                  href="mailto:spraharaj@miami.edu"
+                  style={{
+                    color: '#3498db',
+                    textDecoration: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                  onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                >
+                  spraharaj@miami.edu
+                </a>.
+              </p>
             </div>
           </div>
         </aside>
@@ -1994,40 +2033,7 @@ const App = () => {
             <MapboxPopup map={map.current} activeFeature={activeFeature} />
           )}
 
-          <div style={{
-            position: 'absolute',
-            right: '20px',
-            bottom: '300px',
-            zIndex: 1000
-          }}>
-            <button
-              onClick={handleCensusVisibilityToggle}
-              disabled={!censusLayersReady}
-              style={{
-                padding: '10px 16px',
-                background: censusVisible 
-                  ? 'linear-gradient(135deg, rgba(11, 132, 87, 0.85), rgba(6, 98, 59, 0.85))' 
-                  : 'linear-gradient(135deg, rgba(84, 110, 122, 0.85), rgba(47, 72, 88, 0.85))',
-                backdropFilter: 'blur(10px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(10px) saturate(180%)',
-                color: '#ffffff',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '8px',
-                cursor: censusLayersReady ? 'pointer' : 'not-allowed',
-                fontSize: '0.9em',
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.2)',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {censusVisible ? 'Hide Census Layer' : 'Show Census Layer'}
-            </button>
-          </div>
-
-      
-
-
-
-          {censusLayersReady && censusStats && censusVisible && (
+          {censusLayersReady && censusStats && (
             <>
               <div style={{
                 position: 'absolute',
@@ -2050,8 +2056,18 @@ const App = () => {
                   <input
                     type="radio"
                     name="census-view"
+                    value="none"
+                    checked={!censusVisible || activeCensusView === 'none'}
+                    onChange={() => handleCensusViewChange('none')}
+                  />
+                  No Layer
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                  <input
+                    type="radio"
+                    name="census-view"
                     value="risk"
-                    checked={activeCensusView === 'risk'}
+                    checked={activeCensusView === 'risk' && censusVisible}
                     onChange={() => handleCensusViewChange('risk')}
                   />
                   Risk Index
@@ -2061,14 +2077,14 @@ const App = () => {
                     type="radio"
                     name="census-view"
                     value="pred3pe"
-                    checked={activeCensusView === 'pred3pe'}
+                    checked={activeCensusView === 'pred3pe' && censusVisible}
                     onChange={() => handleCensusViewChange('pred3pe')}
                   />
                   Resilience Index
                 </label>
               </div>
 
-              {activeCensusView === 'risk' && sortedRatings.length > 0 && (
+              {censusVisible && activeCensusView === 'risk' && sortedRatings.length > 0 && (
                 <div style={{
                   position: 'absolute',
                   right: '20px',
@@ -2108,7 +2124,7 @@ const App = () => {
                 </div>
               )}
 
-              {activeCensusView === 'pred3pe' && censusStats?.pred3PE && (
+              {censusVisible && activeCensusView === 'pred3pe' && censusStats?.pred3PE && (
                 <div style={{
                   position: 'absolute',
                   right: '20px',
