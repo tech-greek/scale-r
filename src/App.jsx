@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import mapboxgl from 'https://cdn.skypack.dev/mapbox-gl@2.15.0';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { searchProjects } from './utils/searchProjects.js';
+import { highlightText } from './utils/highlightText.jsx';
 
 
 const parseNumericValue = (value) => {
@@ -163,6 +164,7 @@ const App = () => {
   const [allProjectsData, setAllProjectsData] = useState(null);
   const [isSatelliteView, setIsSatelliteView] = useState(false);
   const [activeFeature, setActiveFeature] = useState(null);
+  const isSwitchingFeatureRef = useRef(false);
   const [censusStats, setCensusStats] = useState(null);
   const [censusLayersReady, setCensusLayersReady] = useState(false);
   const [activeCensusView, setActiveCensusView] = useState('risk');
@@ -184,7 +186,10 @@ const App = () => {
   // Listen for popup close events to reset activeFeature state
   useEffect(() => {
     const handlePopupClosed = () => {
-      setActiveFeature(null);
+      // Don't clear activeFeature if we're intentionally switching to a new feature
+      if (!isSwitchingFeatureRef.current) {
+        setActiveFeature(null);
+      }
     };
 
     window.addEventListener('popupClosed', handlePopupClosed);
@@ -241,8 +246,16 @@ const App = () => {
       duration: 1500
     });
 
+    // Mark that we're switching features to prevent popupClosed from clearing it
+    isSwitchingFeatureRef.current = true;
+    
     // Set active feature to open popup
     setActiveFeature(feature);
+    
+    // Reset the flag after a short delay to allow the popup to update
+    setTimeout(() => {
+      isSwitchingFeatureRef.current = false;
+    }, 100);
 
     // Close search results
     setShowSearchResults(false);
@@ -1099,7 +1112,13 @@ const App = () => {
 
           marker.getElement().addEventListener('click', (e) => {
             e.stopPropagation();
+            // Mark that we're switching features to prevent popupClosed from clearing it
+            isSwitchingFeatureRef.current = true;
             setActiveFeature(feature);
+            // Reset the flag after a short delay to allow the popup to update
+            setTimeout(() => {
+              isSwitchingFeatureRef.current = false;
+            }, 100);
           });
 
           marker.getElement().addEventListener('mouseenter', (e) => {
@@ -2216,44 +2235,55 @@ const App = () => {
                     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
                   }}
                 />
-                {searchQuery && (
-                  <button
-                    aria-label="Clear search"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setSearchResults([]);
-                      setShowSearchResults(false);
-                      setSelectedResultIndex(-1);
-                    }}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#546e7a',
-                      transition: 'color 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#2c3e50'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = '#546e7a'}
+                <button
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    setShowSearchResults(false);
+                    setSelectedResultIndex(-1);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: searchQuery ? 'pointer' : 'default',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#546e7a',
+                    transition: 'color 0.2s ease, opacity 0.2s ease',
+                    opacity: searchQuery ? 1 : 0,
+                    visibility: searchQuery ? 'visible' : 'hidden',
+                    flexShrink: 0,
+                    width: '26px',
+                    height: '26px'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (searchQuery) {
+                      e.currentTarget.style.color = '#2c3e50';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (searchQuery) {
+                      e.currentTarget.style.color = '#546e7a';
+                    }
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  </button>
-                )}
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
               </div>
 
               {/* Search Results Dropdown */}
@@ -2279,6 +2309,7 @@ const App = () => {
                     const projectName = props['Project_Na'] || props['Project Name'] || 'Unnamed Project';
                     const city = (props['NAME'] || props['City']) ? formatCityName((props['NAME'] || props['City']).trim()) : '—';
                     const infrastructureType = props['Infrastruc'] || props['Infrastructure Type'] || props['Type'] || '—';
+                    const description = props['New_15_25_'] || props['New 15-25 Words Project Description'] || '';
                     const isSelected = index === selectedResultIndex;
 
                     return (
@@ -2309,7 +2340,7 @@ const App = () => {
                           color: '#2c3e50',
                           marginBottom: '4px'
                         }}>
-                          {projectName}
+                          {highlightText(projectName, searchQuery)}
                         </div>
                         <div style={{
                           fontSize: '0.85em',
@@ -2318,10 +2349,25 @@ const App = () => {
                           gap: '12px',
                           flexWrap: 'wrap'
                         }}>
-                          <span>{city}</span>
+                          <span>{highlightText(city, searchQuery)}</span>
                           <span>•</span>
-                          <span>{infrastructureType}</span>
+                          <span>{highlightText(infrastructureType, searchQuery)}</span>
                         </div>
+                        {description && (
+                          <div style={{
+                            fontSize: '0.75em',
+                            color: '#7f8c8d',
+                            marginTop: '6px',
+                            lineHeight: 1.4,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}>
+                            {highlightText(description, searchQuery)}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2629,10 +2675,22 @@ const MapboxPopup = ({ map, activeFeature }) => {
     const coords = activeFeature.geometry?.coordinates;
     if (!coords) return;
 
-    popupRef.current
-      .setLngLat(coords)
-      .setHTML(contentRef.current.outerHTML)
-      .addTo(map);
+    // Remove existing popup first to prevent close event from interfering
+    // This ensures a clean transition between popups
+    popupRef.current.remove();
+
+    // Use requestAnimationFrame to ensure DOM is ready and popup is fully removed
+    requestAnimationFrame(() => {
+      if (!map || !popupRef.current || !activeFeature) return;
+      
+      const coords = activeFeature.geometry?.coordinates;
+      if (!coords) return;
+
+      popupRef.current
+        .setLngLat(coords)
+        .setHTML(contentRef.current.outerHTML)
+        .addTo(map);
+    });
   }, [map, activeFeature]);
 
   if (!contentRef.current) return null;
