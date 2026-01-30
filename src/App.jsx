@@ -960,12 +960,12 @@ const App = () => {
       zoom: 11
     });
 
-    map.current.addControl(new mapboxgl.NavigationControl());
-    map.current.addControl(new mapboxgl.FullscreenControl());
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
+    map.current.addControl(new mapboxgl.FullscreenControl(), 'top-left');
     map.current.addControl(new mapboxgl.ScaleControl({
       maxWidth: 100,
       unit: 'imperial'
-    }));
+    }), 'bottom-left');
 
     map.current.on('load', async () => {
       try {
