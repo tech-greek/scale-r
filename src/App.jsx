@@ -2356,7 +2356,7 @@ const App = () => {
                     border: 'none',
                     outline: 'none',
                     background: 'transparent',
-                    fontSize: isMobile ? '0.85em' : '0.95em',
+                    fontSize: isMobile ? '16px' : '0.95em',
                     color: '#2c3e50',
                     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
                   }}
