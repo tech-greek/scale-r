@@ -179,9 +179,43 @@ const App = () => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+
+  // Debounce search input before running search (reduces work on mobile)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchQuery(searchQuery), 200);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [modellingLayerOpen, setModellingLayerOpen] = useState(false);
+  const isMobileRef = useRef(isMobile);
+
+  // Mobile breakpoint listener
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 768px)');
+    const handler = (e) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+  useEffect(() => {
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  // Apply mobile rotation (disable rotation on mobile) when map is ready and isMobile/loading change
+  useEffect(() => {
+    if (loading || !map.current) return;
+    if (isMobile) {
+      map.current.dragRotate.disable();
+      map.current.touchZoomRotate.disableRotation();
+    } else {
+      map.current.dragRotate.enable();
+      map.current.touchZoomRotate.enableRotation();
+    }
+  }, [isMobile, loading]);
 
   // Listen for popup close events to reset activeFeature state
   useEffect(() => {
@@ -263,20 +297,20 @@ const App = () => {
     setSelectedResultIndex(-1);
   }, [allMarkers]);
 
-  // Handle search query changes
+  // Handle search query changes (uses debounced value to reduce work per keystroke)
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    if (!debouncedSearchQuery.trim()) {
       setSearchResults([]);
       setShowSearchResults(false);
       setSelectedResultIndex(-1);
       return;
     }
 
-    const results = searchProjects(searchQuery, allProjectsData);
+    const results = searchProjects(debouncedSearchQuery, allProjectsData);
     setSearchResults(results);
     setShowSearchResults(true); // Show dropdown even if no results (to display "no results" message)
     setSelectedResultIndex(-1);
-  }, [searchQuery, allProjectsData]);
+  }, [debouncedSearchQuery, allProjectsData]);
 
   // Close search dropdown when clicking outside
   useEffect(() => {
@@ -967,7 +1001,19 @@ const App = () => {
       unit: 'imperial'
     }), 'bottom-left');
 
+    const applyMobileRotation = () => {
+      if (!map.current) return;
+      if (isMobileRef.current) {
+        map.current.dragRotate.disable();
+        map.current.touchZoomRotate.disableRotation();
+      } else {
+        map.current.dragRotate.enable();
+        map.current.touchZoomRotate.enableRotation();
+      }
+    };
+
     map.current.on('load', async () => {
+      applyMobileRotation();
       try {
         // Commented out: miami_cities.geojson layer rendering
         /* Object.keys(districtsRef.current).forEach(districtId => {
@@ -1106,7 +1152,7 @@ const App = () => {
 
           const marker = new mapboxgl.Marker({
             color: getMarkerColor(properties['Infrastruc'] || properties['Infrastructure Type'] || properties['Type']),
-            scale: 0.7
+            scale: isMobileRef.current ? 0.5 : 0.7
           })
             .setLngLat(coordinates);
 
@@ -1121,25 +1167,27 @@ const App = () => {
             }, 100);
           });
 
-          marker.getElement().addEventListener('mouseenter', (e) => {
-            e.stopPropagation();
-            // Set flag to prevent census hover
-            isHoveringMarkerRef.current = true;
-            // Clear any active census hover state
-            if (hoveredCensusIdRef.current !== null && map.current) {
-              map.current.setFeatureState(
-                { source: 'census-tracts', id: hoveredCensusIdRef.current },
-                { hover: false }
-              );
-              hoveredCensusIdRef.current = null;
-            }
-          });
+          if (!isMobileRef.current) {
+            marker.getElement().addEventListener('mouseenter', (e) => {
+              e.stopPropagation();
+              // Set flag to prevent census hover
+              isHoveringMarkerRef.current = true;
+              // Clear any active census hover state
+              if (hoveredCensusIdRef.current !== null && map.current) {
+                map.current.setFeatureState(
+                  { source: 'census-tracts', id: hoveredCensusIdRef.current },
+                  { hover: false }
+                );
+                hoveredCensusIdRef.current = null;
+              }
+            });
 
-          marker.getElement().addEventListener('mouseleave', (e) => {
-            e.stopPropagation();
-            // Clear flag to allow census hover again
-            isHoveringMarkerRef.current = false;
-          });
+            marker.getElement().addEventListener('mouseleave', (e) => {
+              e.stopPropagation();
+              // Clear flag to allow census hover again
+              isHoveringMarkerRef.current = false;
+            });
+          }
 
           marker.addTo(map.current);
           marker.feature = feature;
@@ -1617,42 +1665,71 @@ const App = () => {
       .sort((a, b) => b.value - a.value); // Sort by count descending
   }, [allProjectsData, selectedTypes, selectedDisasterFocus, selectedCity]);
 
+  const headerStyle = {
+    background: '#01321e',
+    color: 'white',
+    padding: isMobile ? '8px 12px 8px 16px' : '10px 30px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    flexShrink: 0,
+    paddingTop: isMobile ? 'max(8px, env(safe-area-inset-top))' : undefined
+  };
+  const titleStyle = {
+    fontSize: isMobile ? '1.25em' : '2em',
+    margin: 0,
+    fontWeight: 300,
+    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    letterSpacing: '0.5px',
+    cursor: 'pointer',
+    transition: 'color 0.2s ease',
+    color: showTooltip ? '#60a5fa' : 'white'
+  };
+  const subtitleStyle = {
+    fontSize: isMobile ? '0.75em' : '0.9em',
+    margin: '3px 0 0 0',
+    opacity: 0.8,
+    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    fontWeight: 300,
+    display: isMobile ? 'none' : undefined
+  };
+
   return (
-    <div style={{ margin: 0, padding: 0, fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", backgroundColor: 'white', height: '100vh', width: '100%', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ 
-        background: "#01321e", 
-        color: 'white', 
-        padding: '10px 30px', 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-        flexShrink: 0
-      }}>
-        <div style={{ position: 'relative' }}>
-          <h1 
-            style={{ 
-              fontSize: '2em', 
-              margin: '0', 
-              fontWeight: 300,
-              fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-              letterSpacing: '0.5px',
-              cursor: 'pointer',
-              transition: 'color 0.2s ease',
-              color: showTooltip ? '#60a5fa' : 'white'
-            }}
-            onMouseEnter={() => setShowTooltip(true)}
-            onMouseLeave={() => setShowTooltip(false)}
-          >
-           SCALE-R Resilience Dashboard
-          </h1>
-          <p style={{ 
-            fontSize: '0.9em', 
-            margin: '3px 0 0 0', 
-            opacity: 0.8,
-            fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-            fontWeight: 300
-          }}>Comprehensive mapping of adaptation strategies, projects, and investments in Miami-Dade County</p>
+    <div style={{ margin: 0, padding: 0, fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", backgroundColor: 'white', height: '100vh', height: '100dvh', width: '100%', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      <div style={headerStyle}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : 0, flex: 1, minWidth: 0 }}>
+          {isMobile && (
+            <button
+              type="button"
+              aria-label="Open filters"
+              onClick={() => setSidebarOpen(true)}
+              style={{
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 40,
+                height: 40,
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.3)',
+                background: 'rgba(255,255,255,0.15)',
+                color: 'white',
+                cursor: 'pointer'
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            </button>
+          )}
+          <div style={{ position: 'relative', minWidth: 0 }}>
+            <h1
+              style={titleStyle}
+              onMouseEnter={() => setShowTooltip(true)}
+              onMouseLeave={() => setShowTooltip(false)}
+            >
+              SCALE-R Resilience Dashboard
+            </h1>
+            <p style={subtitleStyle}>Comprehensive mapping of adaptation strategies, projects, and investments in Miami-Dade County</p>
           
           {/* Rich Info Card Tooltip */}
           <div style={{
@@ -1730,11 +1807,13 @@ const App = () => {
               </div>
             </div>
           </div>
+          </div>
         </div>
         <div style={{ 
-          display: 'flex', 
+          display: isMobile ? 'none' : 'flex', 
           alignItems: 'center',
-          gap: '30px'
+          gap: '30px',
+          flexShrink: 0
         }}>
           <img 
             src="/Images/1019px-NSF_logo.png" 
@@ -1758,18 +1837,65 @@ const App = () => {
       
 
       <div style={{ display: 'flex', flex: 1, width: '100%', overflow: 'hidden', boxSizing: 'border-box', minHeight: 0 }}>
-<aside style={{
-          width: '24%',
-          minWidth: '240px',
-          maxWidth: '320px',
+        {isMobile && sidebarOpen && (
+          <div
+            role="presentation"
+            aria-hidden
+            onClick={() => setSidebarOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1099,
+              backgroundColor: 'rgba(0,0,0,0.35)',
+              transition: 'opacity 0.2s ease'
+            }}
+          />
+        )}
+        <aside style={{
+          width: isMobile ? '85%' : '24%',
+          maxWidth: isMobile ? 320 : '320px',
+          minWidth: isMobile ? undefined : '240px',
           background: 'rgba(255, 255, 255, 0.75)',
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
           borderRight: '1px solid rgba(255, 255, 255, 0.3)',
           overflowY: 'auto',
           padding: '20px',
-          boxShadow: '2px 0 20px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.5)'
+          paddingTop: isMobile ? 'max(20px, env(safe-area-inset-top))' : '20px',
+          boxShadow: '2px 0 20px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.5)',
+          ...(isMobile ? {
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            zIndex: 1100,
+            transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+            transition: 'transform 0.25s ease-out'
+          } : {})
         }}>
+          {isMobile && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+              <button
+                type="button"
+                aria-label="Close filters"
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  border: '1px solid rgba(0,0,0,0.15)',
+                  background: 'rgba(255,255,255,0.8)',
+                  color: '#2c3e50',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          )}
           {/* City Filter */}
           <div style={{ marginBottom: '24px', position: 'relative' }} data-city-dropdown>
             <h3 style={{ fontSize: '1.1em', fontWeight: '500', color: '#2c3e50', marginBottom: '12px' }}>
@@ -2174,12 +2300,12 @@ const App = () => {
             data-search-container
             style={{
               position: 'absolute',
-              top: '20px',
+              top: isMobile ? '8px' : '20px',
               left: '50%',
               transform: 'translateX(-50%)',
               zIndex: 1000,
-              width: '90%',
-              maxWidth: '500px'
+              width: isMobile ? 'min(420px, 98vw)' : '90%',
+              maxWidth: isMobile ? 'min(420px, 98vw)' : '500px'
             }}
           >
             <div style={{
@@ -2187,7 +2313,7 @@ const App = () => {
               background: 'rgba(255, 255, 255, 0.85)',
               backdropFilter: 'blur(20px) saturate(180%)',
               WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              borderRadius: '12px',
+              borderRadius: isMobile ? '8px' : '12px',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)',
               border: '1px solid rgba(255, 255, 255, 0.3)',
               overflow: 'visible'
@@ -2195,12 +2321,12 @@ const App = () => {
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                padding: '12px 16px',
-                gap: '12px'
+                padding: isMobile ? '8px 12px' : '12px 16px',
+                gap: isMobile ? '8px' : '12px'
               }}>
                 <svg
-                  width="20"
-                  height="20"
+                  width={isMobile ? 18 : 20}
+                  height={isMobile ? 18 : 20}
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="#546e7a"
@@ -2218,7 +2344,7 @@ const App = () => {
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    setShowSearchResults(true);
+                    setShowSearchResults(!!e.target.value.trim());
                   }}
                   onFocus={() => {
                     if (searchResults.length > 0) {
@@ -2230,7 +2356,7 @@ const App = () => {
                     border: 'none',
                     outline: 'none',
                     background: 'transparent',
-                    fontSize: '0.95em',
+                    fontSize: isMobile ? '0.85em' : '0.95em',
                     color: '#2c3e50',
                     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
                   }}
@@ -2247,7 +2373,7 @@ const App = () => {
                     background: 'transparent',
                     border: 'none',
                     cursor: searchQuery ? 'pointer' : 'default',
-                    padding: '4px',
+                    padding: isMobile ? '2px' : '4px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2256,8 +2382,8 @@ const App = () => {
                     opacity: searchQuery ? 1 : 0,
                     visibility: searchQuery ? 'visible' : 'hidden',
                     flexShrink: 0,
-                    width: '26px',
-                    height: '26px'
+                    width: isMobile ? 22 : 26,
+                    height: isMobile ? 22 : 26
                   }}
                   onMouseEnter={(e) => {
                     if (searchQuery) {
@@ -2375,7 +2501,7 @@ const App = () => {
               )}
 
               {/* No Results Message */}
-              {showSearchResults && searchQuery.trim() && searchResults.length === 0 && (
+              {showSearchResults && debouncedSearchQuery.trim() && searchResults.length === 0 && (
                 <div style={{
                   position: 'absolute',
                   top: '100%',
@@ -2394,7 +2520,7 @@ const App = () => {
                   color: '#546e7a',
                   fontSize: '0.9em'
                 }}>
-                  No projects found matching "{searchQuery}"
+                  No projects found matching "{debouncedSearchQuery}"
                 </div>
               )}
             </div>
@@ -2407,54 +2533,167 @@ const App = () => {
 
           {censusLayersReady && censusStats && (
             <>
-              <div style={{
-                position: 'absolute',
-                bottom: '190px',
-                right: '20px',
-                zIndex: 1000,
-                background: 'rgba(255, 255, 255, 0.75)',
-                backdropFilter: 'blur(20px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-                padding: '16px',
-                borderRadius: '12px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                minWidth: '220px'
-              }}>
-                <div style={{ fontSize: '1em', fontWeight: 600, color: '#1b3a4b', marginBottom: '10px' }}>
-                  Modelling Layer
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
-                  <input
-                    type="radio"
-                    name="census-view"
-                    value="none"
-                    checked={!censusVisible || activeCensusView === 'none'}
-                    onChange={() => handleCensusViewChange('none')}
-                  />
-                  No Layer
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
-                  <input
-                    type="radio"
-                    name="census-view"
-                    value="risk"
-                    checked={activeCensusView === 'risk' && censusVisible}
-                    onChange={() => handleCensusViewChange('risk')}
-                  />
-                  Risk Index
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
-                  <input
-                    type="radio"
-                    name="census-view"
-                    value="pred3pe"
-                    checked={activeCensusView === 'pred3pe' && censusVisible}
-                    onChange={() => handleCensusViewChange('pred3pe')}
-                  />
-                  Resilience Index
-                </label>
-              </div>
+              {isMobile && modellingLayerOpen && (
+                <div
+                  role="presentation"
+                  aria-hidden
+                  onClick={() => setModellingLayerOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 1098,
+                    backgroundColor: 'rgba(0,0,0,0.25)',
+                    transition: 'opacity 0.2s ease'
+                  }}
+                />
+              )}
+              {isMobile ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label={modellingLayerOpen ? 'Close layers panel' : 'Open layers panel'}
+                    onClick={() => setModellingLayerOpen((prev) => !prev)}
+                    style={{
+                      position: 'absolute',
+                      bottom: 'max(16px, env(safe-area-inset-bottom))',
+                      right: 'max(16px, env(safe-area-inset-right))',
+                      zIndex: 1000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      padding: '10px 14px',
+                      background: 'rgba(255, 255, 255, 0.85)',
+                      backdropFilter: 'blur(20px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      borderRadius: '10px',
+                      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)',
+                      color: '#1b3a4b',
+                      fontSize: '0.9em',
+                      fontWeight: 500,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                      <polyline points="2 17 12 22 22 17"/>
+                    </svg>
+                    Layers
+                  </button>
+                  {modellingLayerOpen && (
+                    <>
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '190px',
+                        right: '20px',
+                        zIndex: 1100,
+                        background: 'rgba(255, 255, 255, 0.75)',
+                        backdropFilter: 'blur(20px) saturate(180%)',
+                        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)',
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        minWidth: '220px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <div style={{ fontSize: '1em', fontWeight: 600, color: '#1b3a4b' }}>Modelling Layer</div>
+                          <button type="button" aria-label="Close" onClick={() => setModellingLayerOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#546e7a', display: 'flex' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                          <input type="radio" name="census-view-mobile" value="none" checked={!censusVisible || activeCensusView === 'none'} onChange={() => handleCensusViewChange('none')} />
+                          No Layer
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                          <input type="radio" name="census-view-mobile" value="risk" checked={activeCensusView === 'risk' && censusVisible} onChange={() => handleCensusViewChange('risk')} />
+                          Risk Index
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                          <input type="radio" name="census-view-mobile" value="pred3pe" checked={activeCensusView === 'pred3pe' && censusVisible} onChange={() => handleCensusViewChange('pred3pe')} />
+                          Resilience Index
+                        </label>
+                      </div>
+                      {censusVisible && activeCensusView === 'risk' && sortedRatings.length > 0 && (
+                        <div style={{ position: 'absolute', right: '20px', bottom: '70px', zIndex: 1100, background: 'rgba(255, 255, 255, 0.75)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', padding: '16px', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)', border: '1px solid rgba(255, 255, 255, 0.3)', minWidth: '220px' }}>
+                          <div style={{ fontSize: '1em', fontWeight: 600, color: '#1b3a4b', marginBottom: '12px' }}>FEMA Risk Rating</div>
+                          <div style={{ marginBottom: '8px' }}>
+                            <div style={{ width: '100%', height: '20px', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                              <div style={{ width: '100%', height: '100%', background: 'linear-gradient(to right, #FFF9C4 0%, #FFF9C4 20%, #FFE082 25%, #FFE082 40%, #FFB74D 45%, #FFB74D 60%, #FF8A65 65%, #FF8A65 80%, #E64A19 85%, #E64A19 100%)' }}></div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#546e7a' }}><span>Very Low</span><span>Very High</span></div>
+                          </div>
+                        </div>
+                      )}
+                      {censusVisible && activeCensusView === 'pred3pe' && censusStats?.pred3PE && (
+                        <div style={{ position: 'absolute', right: '20px', bottom: '70px', zIndex: 1100, background: 'rgba(255, 255, 255, 0.75)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', padding: '16px', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)', border: '1px solid rgba(255, 255, 255, 0.3)', minWidth: '220px' }}>
+                          <div style={{ fontSize: '1em', fontWeight: 600, color: '#1b3a4b', marginBottom: '12px' }}>Resilience Index (%)</div>
+                          <div style={{ marginBottom: '8px' }}>
+                            <div style={{ width: '100%', height: '20px', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                              <div style={{ width: '100%', height: '100%', background: 'linear-gradient(to right, #E8D4F5 0%, #E8D4F5 10%, #D4B3E8 20%, #C298DB 35%, #A866C7 50%, #7A3FA8 65%, #5A1D85 80%, #2D0045 90%, #2D0045 100%)' }}></div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#546e7a' }}>
+                              <span>{censusStats.pred3PE.min?.toFixed(1) || '0'}%</span>
+                              <span>{censusStats.pred3PE.max?.toFixed(1) || '0'}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '190px',
+                    right: '20px',
+                    zIndex: 1000,
+                    background: 'rgba(255, 255, 255, 0.75)',
+                    backdropFilter: 'blur(20px) saturate(180%)',
+                    WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    minWidth: '220px'
+                  }}>
+                    <div style={{ fontSize: '1em', fontWeight: 600, color: '#1b3a4b', marginBottom: '10px' }}>
+                      Modelling Layer
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                      <input
+                        type="radio"
+                        name="census-view"
+                        value="none"
+                        checked={!censusVisible || activeCensusView === 'none'}
+                        onChange={() => handleCensusViewChange('none')}
+                      />
+                      No Layer
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                      <input
+                        type="radio"
+                        name="census-view"
+                        value="risk"
+                        checked={activeCensusView === 'risk' && censusVisible}
+                        onChange={() => handleCensusViewChange('risk')}
+                      />
+                      Risk Index
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.9em', color: '#1b3a4b' }}>
+                      <input
+                        type="radio"
+                        name="census-view"
+                        value="pred3pe"
+                        checked={activeCensusView === 'pred3pe' && censusVisible}
+                        onChange={() => handleCensusViewChange('pred3pe')}
+                      />
+                      Resilience Index
+                    </label>
+                  </div>
 
               {censusVisible && activeCensusView === 'risk' && sortedRatings.length > 0 && (
                 <div style={{
@@ -2535,6 +2774,8 @@ const App = () => {
                   </div>
                 </div>
               )}
+                </>
+              )}
             </>
           )}
 
@@ -2549,12 +2790,12 @@ const App = () => {
           {/* Map Style Toggle */}
           <div style={{ 
             position: 'absolute', 
-            bottom: '30px', 
-            right: '20px', 
+            bottom: isMobile ? '72px' : '30px',
+            right: isMobile ? 'max(16px, env(safe-area-inset-right))' : '20px',
             background: 'rgba(255, 255, 255, 0.75)',
             backdropFilter: 'blur(20px) saturate(180%)',
             WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            borderRadius: '25px', 
+            borderRadius: isMobile ? '20px' : '25px',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6)',
             border: '1px solid rgba(255, 255, 255, 0.3)',
             zIndex: 1000,
